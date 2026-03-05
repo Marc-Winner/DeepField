@@ -4,7 +4,7 @@ import os
 import re
 import shlex
 from io import StringIO
-from itertools import zip_longest
+from itertools import zip_longest, chain
 from pathlib import Path
 
 import chardet
@@ -797,3 +797,74 @@ def _dummy_loader3(buffer):
             if end_line:
                 break
         end_line = '/' in line
+
+def read_header(buffer, header_info):
+    """Read mixed-type header from a string buffer before first occurrence of /.
+
+    Parameters
+    ----------
+    buffer: buffer
+        String buffer to read.
+    header_info: dict
+        Dict with header's meta information:
+            header_info['attrs'] - list of column names
+            header_info['domain'] - list of domain columns indices
+            header_infi['type'] - list of columns types
+    Returns
+    -------
+    header : pandas DataFrame
+        Parsed table.
+    """
+    for line in buffer:
+        if '/' in line:
+            header = re.findall(r"('\s*?'|\S+|[\d\.-]+)", line.split('/')[0].strip())
+            break
+        continue
+
+    for i, record in enumerate(header):
+        record = record.replace("'", "").strip()
+        if record in ['1*', ""]:
+            if header_info['defaults'][i] is None:
+                raise ValueError(f"Default value not assumed for {header_info['attrs'][i]} in the table.")
+            record = header_info['defaults'][i]
+        if header_info['types'] is not None:
+            if not isinstance(record, header_info['types'][i]):
+                try:
+                    record = header_info['types'][i](record)
+                except (ValueError, TypeError) as e:
+                    _ = e
+                    raise ValueError(f"{header_info['attrs'][i]} can't be converted into valid type.") from None
+
+        header[i] = record
+    return dict(zip(header_info['attrs'], header))
+
+def read_vfp_body(buffer, nrec, dtype=np.float32):
+    """Read VFP table body.
+
+    Parameters
+    ----------
+    buffer : buffer
+        String buffer to read.
+    nrec : list
+        list of number of records for all records in VFP table
+    dtype : dtype, optional
+        dtype of resulting np.ndarray, by default np.float32
+    Returns
+    -------
+    table : np.ndarray
+        Array with columns of indices and one column of value.
+    """
+    def strip_split(line):
+        return line.strip().strip('/').split()
+
+    nflo = nrec[0]
+    nrow = np.prod(nrec[1:])
+    nind = len(nrec[1:])
+    table = np.fromiter(chain.from_iterable(map(strip_split, buffer)),
+                        dtype=dtype,
+                        count=(nind+nflo)*nrow)
+    table = table.reshape((nrow, nind+nflo))
+    index = table[:, :len(nrec)-1].copy() - 1
+    return np.hstack((np.tile(np.arange(nflo), nrow).reshape(-1, 1),
+                      np.repeat(index, nflo, axis=0),
+                      table[:, len(nrec)-1:].copy().reshape(-1, 1)))

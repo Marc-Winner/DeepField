@@ -278,3 +278,96 @@ class _Table(pd.DataFrame):  # pylint: disable=abstract-method
                 index = self.index.values.reshape(-1, 1)
             return np.hstack((index, self.values))
         return self.values
+
+class VFPTable(_Table):#pylint: disable=too-many-ancestors
+    """VFPTable class"""
+
+    _metadata = _Table._metadata + ['number', 'vfptype', 'records', 'variables',
+                                    'constants', 'meta', '_model', '_finterpolator']
+
+    def __init__(self, data=None, dct=None, name='VFPI', **kwargs):
+
+        _empty = data not in [None, False]
+        self.number = 9999
+        if not _empty:
+            dct = {} if dct is None else dct
+            self.number = 9999 if name == 'VFP9999' else dct['HEADER'].pop('NUMBER', 0)
+            self.vfptype = dct.get('TYPE', 'VFPPROD')
+            self.meta = dct.get('HEADER', {})
+            record_names = ['FLO', 'THP'] + ['WFR', 'GFR', 'ALQ'] * (self.vfptype == 'VFPPROD')
+            self.records = {rec:dct.get(rec, None) for rec in record_names}
+            self.variables = {'THP': record_names.index('THP')}
+            self.constants = {rec: (i, None) for i, rec in enumerate(record_names) if rec not in self.variables}
+            if self.number != 9999:
+                kwargs['columns'] = list(self.records.keys())+[self.meta['VALUE']]
+                data = dct['DATA']
+            del dct
+
+        super().__init__(data=data, name=name, **kwargs)
+
+        if not _empty:
+            self.format_table()
+            if self.number == 9999:
+                self._interpolator = lambda x: np.take(x, self.variables['THP'], axis=-1)
+                self._finterpolator = None # fallback interpolator
+            else:
+                self._interpolator = TABLE_INTERPOLATOR[self.name](self)
+                self._finterpolator = TABLE_INTERPOLATOR['VFPIE'](self)
+
+    @property
+    def _constructor(self):
+        return VFPTable
+
+    def __call__(self, x: np.ndarray) -> np.ndarray:
+
+        x = np.asarray(x)
+        try:
+            out = self._interpolator(x)
+            if np.any(np.isnan(out)):
+                x_input = np.take(x, indices=list(self.variables.values()), axis=-1)
+                out = self._finterpolator(x_input)
+            return out
+        except Exception as e:
+            _ = e
+            if x.shape[-1] == len(self.records):
+                for const in self.constants:
+                    index, value = self.constants[const]
+                    arg = np.take(x, index, axis=-1)
+                    if not np.allclose(arg, value):
+                        raise ValueError(f"Arg {const} at {index} ({value}) doesn't match VFPTable ({arg})") from e
+                x_input = np.take(x, list(self.variables.values()), axis=-1)
+                out = self._interpolator(x_input)
+                if np.any(np.isnan(out)):
+                    out = self._finterpolator(x_input)
+                return out
+            raise ValueError(f"VFP {self.number}: col num != {len(self.variables)} or {len(self.records)}") from e
+
+    @property
+    def proper_records(self) -> dict[str, float]:
+        """Return dict of records with length >1."""
+        records = {k:v for k, v in self.records.items() if k in self.variables}
+        return records
+
+    @property
+    def multi_grid(self) -> np.ndarray:
+        """Return VFPTable reshaped into dimensions (rec1.size, ..., recn.size)."""
+        nrec = [len(r) for r in self.proper_records.values()]
+        vfp_array = self.sort_index(level=self.index.names[::-1]).values
+        return vfp_array.reshape(nrec, order='F')
+
+    def format_table(self) -> None:
+        """Format table into appropriate format."""
+        if self.number == 9999:
+            return # no table formatting is required
+        index2value = lambda index, rec: self.records[rec][int(index)] #pylint: disable=unnecessary-lambda-assignment
+        self.variables: dict[str, int] = {}
+        self.constants: dict[str, tuple[int, str]] = {}
+        for i, rec in enumerate(self.records):
+            self[rec] = self[rec].apply(index2value, args=(rec,))
+            if self[rec].nunique() == 1:
+                self.constants[rec] = (i, self.records[rec][0])
+            else:
+                self.variables[rec] = i
+        self.drop(columns=list(self.constants.keys()), inplace=True)
+        self.domain = list(self.variables.keys())
+        self.set_index(self.domain, inplace=True)

@@ -4,7 +4,7 @@ from functools import wraps
 from textwrap import dedent
 import functools
 import numpy as np
-from anytree import PreOrderIter
+from anytree import PreOrderIter, PostOrderIter
 
 
 class cached_property:  # pylint: disable=invalid-name
@@ -123,6 +123,51 @@ def apply_to_each_segment(method, node_types=('well', 'fault')):
             return self
         return np.array(res)
 
+    return decorator
+
+def apply_to_each_node(node_types=('well',),
+                       order='PreOrderIter',
+                       reverse=False,
+                       root='root',
+                       **iter_kwargs):
+    """Apply a method to nodes of the well's tree.
+
+    Parameters
+    ----------
+    node_types : tuple, optional
+        Node types to be processed by the decorated method.
+    order : str or anytree iterator class
+        iterator to use when iterating over tree. Default to 'PreOrderIter'
+    reverse : bool, optional
+        whether to iterate in reverse direction (from bottom to top). Default to False
+    Returns
+    -------
+    decorator : callable
+        Decorated method.
+    """
+    iterators = {'PreOrderIter': PreOrderIter,
+                 "PostOrderIter": PostOrderIter,
+                 }
+    iterator = iterators[order]
+    filter_ = iter_kwargs.get('filter_', lambda n: n)
+    iter_kwargs['filter_'] = lambda n: (n.ntype in node_types) and filter_(n)
+
+    def decorator(method):
+        """Returned decorator."""
+        @wraps(method)
+        def wrapper(self, *args, **kwargs):
+            """Method wrapper."""
+            res = []
+            _root = getattr(self, root)
+            nodes = tuple(iterator(_root, **iter_kwargs))
+            if reverse:
+                nodes = reversed(nodes)
+            for node in nodes:
+                res.append(method(self, node, *args, **kwargs))
+            if isinstance(res[0], self.__class__):
+                return self
+            return np.array(res)
+        return wrapper
     return decorator
 
 def extract_actions(module):

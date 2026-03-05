@@ -37,3 +37,13 @@ TABLE_INFO = {
                     defaults=[(600, 37.457),  (999.014, 62.366), (1, 0.062428)])
 
 }
+
+VFP_HEADER_INFO = {
+    'VFPPRODHEADER': dict(attrs=['NUMBER', 'REF', 'FLO', 'WFR', 'GFR', 'TYPE', 'ALQ', 'UNITS', 'VALUE'],
+                          defaults=[None, None, None, None, None, 'THP', False, None, 'BHP'],
+                          domain=[], types=[int, float]+[str]*7),
+
+    'VFPINJHEADER': dict(attrs=['NUMBER', 'REF', 'FLO', 'TYPE', 'UNITS', 'VALUE'],
+                         defaults=[None, None, None, 'THP', '1*', 'BHP'],
+                         domain=[], types=[int, float]+[str]*4)
+}

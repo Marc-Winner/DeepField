@@ -403,6 +403,9 @@ class Field:
                         extented_list.extend(['HFIL', 'HFILE'])
                     elif k == 'WELLTRACK':
                         extented_list.extend(['TFIL', 'WELLTRACK'])
+                    elif k == 'NETWORK':
+                        extented_list.extend(['NETWORK', 'BRANPROP', 'NODEPROP', 'VFPPROD',
+                                              'VFPINJ', 'VFPTABL', 'NETBALAN', 'NWATREM', 'NGASREM'])
                     elif k == 'RESULTS':
                         continue
                     else:
