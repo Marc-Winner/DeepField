@@ -287,7 +287,12 @@ class VFPTable(_Table):#pylint: disable=too-many-ancestors
 
     def __init__(self, data=None, dct=None, name='VFPI', **kwargs):
 
-        _empty = data not in [None, False]
+        # Fix for DataFrame truth value ambiguity
+        if data is None or data is False:
+            _empty = False
+        else:
+            _empty = True
+            
         self.number = 9999
         if not _empty:
             dct = {} if dct is None else dct
