@@ -48,6 +48,11 @@ class BaseTreeNode(BaseComponent, NodeMixin):
     def ntype(self):
         """Node's type."""
         return self._ntype
+    
+    @ntype.setter
+    def ntype(self, val):
+        self._ntype = val
+
 
     @property
     def name(self):
