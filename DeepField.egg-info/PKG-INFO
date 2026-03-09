@@ -1,0 +1,175 @@
+Metadata-Version: 2.4
+Name: DeepField
+Version: 2.0.0
+Summary: A framework for reservoir simulation
+Home-page: https://github.com/deepfield-team/DeepField
+Author: deepfield-team
+Author-email: 
+License: Apache License 2.0
+Platform: any
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: Apache License 2.0
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Scientific/Engineering
+License-File: LICENSE
+Requires-Dist: chardet
+Requires-Dist: pandas
+Requires-Dist: scikit-learn
+Requires-Dist: scikit-image
+Requires-Dist: h5py
+Requires-Dist: anytree
+Requires-Dist: ipywidgets
+Requires-Dist: pyvista
+Requires-Dist: tqdm
+Requires-Dist: numba
+Requires-Dist: tables
+Requires-Dist: pytest
+Requires-Dist: psutil
+Requires-Dist: dask
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: platform
+Dynamic: requires-dist
+Dynamic: summary
+
+.. geology documentation master file, created by
+   sphinx-quickstart on Tue Mar  3 13:38:10 2020.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
+
+Welcome to DeepField's documentation!
+=====================================
+
+`DeepField` is a python-based framework for reservoir engineering.
+
+
+Contents
+========
+.. toctree::
+   :maxdepth: 4
+   :titlesonly:
+
+   quick_start/quick_start
+   api/deepfield
+
+
+Supported keywords
+==================
+
+.. note:: Besides of standard keywords, any component supports
+          custom keywords with array-like data.
+
+General
+
+* ARRA
+* ARRAY
+* DISGAS
+* EFIL
+* EFILE
+* EFOR
+* EFORM
+* ETAB
+* FIELD
+* GAS
+* HFIL
+* HFILE
+* HUNI
+* HUNIS
+* INCLUDE
+* METRIC
+* OIL
+* START
+* TITLE
+* TFIL
+* TTAB
+* USERFILE
+* VAPOIL
+* WATER
+
+Grid
+
+* ACTNUM
+* DIMENS
+* DX
+* DY
+* DZ
+* MAPAXES
+* TOPS
+* COORD
+* DIMENS
+* ZCORN
+* MINPV
+
+Rock
+
+* PERMX
+* PERMY
+* PERMZ
+* PORO
+* KRW
+* KRWR
+* SGU
+* SOGCR
+* SOWCR
+* SWATINIT
+* SWCR
+* SWL
+
+States
+
+* PRESSURE
+* SGAS
+* SOIL
+* SWAT
+* RS
+
+Tables
+
+* PVTO
+* PVDG
+* PVTW
+* SWOF
+* SGOF
+* RSVD
+* ROCK
+* DENSITY
+
+Wells
+
+* wells and groups related keywords from .RSM file
+* control keywords from ETAB section
+* COMPDAT
+* COMPDATL
+* COMPDATMD
+* GROU
+* GROUP
+* GRUPTREE
+* PERF
+* WCONPROD
+* WCONINJE
+* WELLTRACK
+* WELSPECS
+* WEFAC
+* WFRAC
+* WFRACP
+
+Faults
+
+* FAULTS
+* MULTFLT
+
+Arithmetics (operations with array-like data)
+
+* EQUALS
+* ADD
+* MULTIPLY
+* COPY

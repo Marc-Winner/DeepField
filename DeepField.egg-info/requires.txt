@@ -1,0 +1,14 @@
+chardet
+pandas
+scikit-learn
+scikit-image
+h5py
+anytree
+ipywidgets
+pyvista
+tqdm
+numba
+tables
+pytest
+psutil
+dask
