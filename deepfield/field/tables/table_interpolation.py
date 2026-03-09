@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 from scipy.interpolate import LinearNDInterpolator, interp1d, RegularGridInterpolator
-from df_interpolator import DFInterpolator
+from .df_interpolator import DFInterpolator
 
 def _linear_table_interpolator(table):
     """Returns linear interpolation function for given table
@@ -223,6 +223,7 @@ def baker_linear_model(tables, sat_w, sat_g, swc, eps=0.001):
     return kr_o
 
 TABLE_INTERPOLATOR = {None: _linear_table_interpolator,
+                      'VFP1': _df_interpolator, 'VFP2': _df_interpolator, # VFPTABL value is ignored
                       'VFPIE': _regular_grid_interpolator, 'VFPI': _df_interpolator,
                       'PVDG': _pvd_table_interpolator, 'PVDO': _pvd_table_interpolator,
                       'PVTO': _pvto_table_interpolator, 'PVTW': _pvtw_table_interpolator,
