@@ -30,7 +30,7 @@ from .tables import Tables
 from .template_models import (CORNERPOINT_GRID, DEFAULT_ECL_MODEL,
                               DEFAULT_TN_MODEL, ORTHOGONAL_GRID)
 from .utils import get_single_path
-from .wells import Wells
+from .wells import Wells, Network
 
 ACTOR = None
 
@@ -39,7 +39,7 @@ COMPONENTS_DICT = {'cornerpointgrid': ['grid', CornerPointGrid],
                    'grid': ['grid', Grid],
                    'rock': ['rock', Rock],
                    'states': ['states', States],
-                   'wells': ['wells', Wells],
+                   'wells': ['wells', Network],
                    'tables': ['tables', Tables],
                    'aquifers': ['aquifers', Aquifers],
                    'faults': ['faults', Faults]
