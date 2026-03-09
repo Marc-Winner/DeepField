@@ -4,7 +4,7 @@ from functools import wraps
 from textwrap import dedent
 import functools
 import numpy as np
-from anytree import PreOrderIter, PostOrderIter
+from anytree import PreOrderIter, PostOrderIter, LevelOrderIter
 
 
 class cached_property:  # pylint: disable=invalid-name
@@ -147,6 +147,7 @@ def apply_to_each_node(node_types=('well',),
     """
     iterators = {'PreOrderIter': PreOrderIter,
                  "PostOrderIter": PostOrderIter,
+                 "LevelOrderIter": LevelOrderIter
                  }
     iterator = iterators[order]
     filter_ = iter_kwargs.get('filter_', lambda n: n)
