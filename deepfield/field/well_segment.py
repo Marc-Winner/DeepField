@@ -30,6 +30,9 @@ class WellSegment(BaseTreeNode):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+    def __repr__(self):
+        return f"WellSegment(name={self.name}, is_group={self.is_group}, is_main_branch={self.is_main_branch})"
+
     @property
     def is_main_branch(self):
         """Check that node in a main well's branch."""
