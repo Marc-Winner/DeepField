@@ -5,8 +5,9 @@ from weakref import ref
 import numpy as np
 import pandas as pd
 import h5py
-from anytree import (RenderTree, AsciiStyle, Resolver, PreOrderIter, PostOrderIter,
-                     find_by_attr)
+from anytree import (RenderTree, Resolver, PreOrderIter, PostOrderIter, find_by_attr,
+                     AsciiStyle, ContStyle, ContRoundStyle, DoubleStyle,
+                     )
 
 from .base_tree_node import BaseTreeNode
 from .base_component import BaseComponent
@@ -183,9 +184,15 @@ class BaseTree(BaseComponent):
         """Return instances at ``name`` supporting wildcards."""
         return self.resolver.glob(self.root, name)
 
-    def render_tree(self):
+    def render_tree(self, style="ascii"):
         """Print tree structure."""
-        print(RenderTree(self.root, style=AsciiStyle()).by_attr())
+        styles = {
+            "ascii": AsciiStyle(),
+            "cont": ContStyle(),
+            "cont_round": ContRoundStyle(),
+            "double": DoubleStyle()
+        }
+        print(RenderTree(self.root, style=styles[style]).by_attr())
         return self
 
     def _load_hdf5(self, path, attrs=None, **kwargs):
