@@ -567,7 +567,7 @@ def load_vfp(wells, buffer, attr, **kwargs):
     if 'VFPTABL' in wells.root.attributes:
         name = f"VFP{wells.root.vfptabl}"
     else:
-        name = "VFP3"
+        name = "VFPI"
     wellsdata = {'FIELD': {'VFPTABLES': [VFPTable(dct=vfp_dict, name=name)]}}
     wells.update(wellsdata, mode='a', **kwargs)
     return wells
