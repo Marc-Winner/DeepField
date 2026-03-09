@@ -1,2 +1,2 @@
 """Init file"""
-from .tables import Tables
+from .tables import Tables, VFPTable

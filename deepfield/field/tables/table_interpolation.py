@@ -1,7 +1,8 @@
 """Methods for table interpolation"""
 import numpy as np
 import pandas as pd
-from scipy.interpolate import LinearNDInterpolator, interp1d
+from scipy.interpolate import LinearNDInterpolator, interp1d, RegularGridInterpolator
+from df_interpolator import DFInterpolator
 
 def _linear_table_interpolator(table):
     """Returns linear interpolation function for given table
@@ -21,6 +22,19 @@ def _linear_table_interpolator(table):
     if len(table.domain) < 2:
         return interp1d(domain_values, dependent_values, axis=0, bounds_error=False, fill_value='extrapolate')
     return LinearNDInterpolator(domain_values, dependent_values)
+
+def _regular_grid_interpolator(table):
+    grid_interp = RegularGridInterpolator(
+        list(table.proper_records.values()),
+        table.multi_grid,
+        bounds_error=False, # needed for extrapolation
+        fill_value=None  # needed for extrapolation
+    )
+    return grid_interp
+
+def _df_interpolator(table):
+    grid_interp = DFInterpolator(table)
+    return grid_interp
 
 def _pvd_table_interpolator(table):
     """Returns inverse linear interpolation function for FVF and viscosity values
@@ -209,7 +223,9 @@ def baker_linear_model(tables, sat_w, sat_g, swc, eps=0.001):
     return kr_o
 
 TABLE_INTERPOLATOR = {None: _linear_table_interpolator,
+                      'VFPIE': _regular_grid_interpolator, 'VFPI': _df_interpolator,
                       'PVDG': _pvd_table_interpolator, 'PVDO': _pvd_table_interpolator,
                       'PVTO': _pvto_table_interpolator, 'PVTW': _pvtw_table_interpolator,
                       'PVCDO': _pvtw_table_interpolator,
-                      'SWOF': _relative_perm_table_interpolator, 'SGOF': _relative_perm_table_interpolator}
+                      'SWOF': _relative_perm_table_interpolator, 
+                      'SGOF': _relative_perm_table_interpolator}

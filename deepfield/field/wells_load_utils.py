@@ -7,7 +7,11 @@ import pandas as pd
 from .well_segment import WellSegment
 from .utils import get_multout_paths, get_single_path
 from .parse_utils import (read_rsm, parse_perf_line, parse_control_line,
-                          parse_history_line, read_ecl_bin, parse_eclipse_keyword)
+                          parse_history_line, read_ecl_bin, parse_eclipse_keyword,
+                          read_array, read_header, read_vfp_body, VFP_HEADER_INFO)
+
+from .tables import VFPTable
+
 
 DEFAULTS = {'RAD': 0.1524, 'DIAM': 0.3048, 'SKIN': 0, 'MULT': 1, 'CLOSE': False,
             'MODE': 'OPEN', 'DIR': 'Z', 'GROUP': 'FIELD'}
@@ -405,4 +409,290 @@ def load_history(wells, buffer, column_names, logger, **kwargs):
     if not df.empty:
         welldata = {k: {'HISTORY': v.reset_index(drop=True)} for k, v in df.groupby('WELL')}
         wells.update(welldata, mode='a', ignore_index=True)
+    return wells
+
+
+def load_network(wells, buffer, **kwargs):
+    """Load network."""
+    _ = kwargs
+    columns = ['NODMAX', 'NBRMAX', 'NBCMAX']
+    df = pd.DataFrame(dict(zip(columns, read_array(buffer, dtype=int).tolist())), index=[0])
+    welldata = {'FIELD': {'NETWORK': df}}
+    wells.update(welldata, mode='a', ignore_index=True)
+    return wells
+
+def load_branprop(wells, buffer, **kwargs):
+    """Load branprop."""
+    _ = kwargs
+    columns = ['DOWNODE', 'UPNODE', 'VFPTAB', 'ALQ-NODE', 'ALQ-DEN']
+    defaults = [None, None, None, 0.0, 'NONE']
+    wellsdata = {}
+    for line in buffer:
+        line = line.split('/')[0].strip()
+        if not line:
+            break
+
+        vals = re.sub("[\"\']", "", line).split()
+
+        for i, col in enumerate(columns):
+            try:
+                val = vals[i]
+                if val in ('1*', ""):
+                    raise ValueError()
+            except IndexError as e:
+                if defaults[i] is None:
+                    raise ValueError(f'Default value not assumed for {col} in the table.') from e
+                vals.append(defaults[i])
+            except ValueError as e:
+                if defaults[i] is None:
+                    raise ValueError(f'Default value not assumed for {col} in the table.') from e
+                vals[i] = defaults[i]
+
+        val_dict = dict(zip(columns, vals))
+        if val_dict['VFPTAB'].isdigit():
+            val_dict['VFPTAB'] = int(val_dict['VFPTAB'])
+        else:
+            raise ValueError('VFP Table number should be a positive integer')
+        try:
+            val_dict['ALQ-NODE'] = float(val_dict['ALQ-NODE'])
+            if val_dict['ALQ-NODE'] < 0:
+                raise ValueError()
+        except ValueError as e:
+            raise ValueError('Artificial Lift Quantity (ALQ-NODE) should be a positive integer') from e
+
+        if val_dict['ALQ-DEN'] in ['DENO', 'DENG']:
+            val_dict['ALQ-NODE'] = 0.0
+        if val_dict['ALQ-DEN'] == 'NONE':
+            val_dict['ALQ-DEN'] = None
+
+        try:
+            upnode = wells[val_dict['UPNODE']]
+            upnode.ntype = "group"
+        except KeyError:
+            upnode = WellSegment(parent=wells.root,
+                                 name=val_dict['UPNODE'],
+                                 ntype='group') # upper node always be a group
+        try:
+            downode = wells[val_dict['DOWNODE']]
+        except KeyError:
+            downode = WellSegment(parent=wells.root,
+                                  name=val_dict['DOWNODE'],
+                                  ntype="group")
+
+        vfp = get_vfp(wells, val_dict['VFPTAB'])
+        if vfp is not None:
+            downode.parent = upnode
+        wellsdata[downode.name] = {
+            'VFP': vfp,
+            'ALQ_NODE': val_dict['ALQ-NODE'],
+            'ALQ_DEN': val_dict['ALQ-DEN'],
+        }
+    wells.update(wellsdata, mode='w', **kwargs)
+    return wells
+
+def get_vfp(wells, num):
+    """Get VFP Table object by its number."""
+    try:
+        num = int(num)
+    except Exception as e:
+        raise ValueError("VFP Table number should be convertable to integer, {} given".format(num)) from e
+    if num == 9999:
+        return VFPTable(data=None, name="VFP9999", dct={})
+    if num == 0:
+        return None
+    matched = list(filter((lambda vfp: vfp.number == num), getattr(wells.root, "VFPTABLES", [])))
+    if len(matched) < 1:
+        raise ValueError('No VFP with this number is found: {}. VFP 9999 is chosen instead'.format(num))
+    return matched[0]
+
+def load_nodeprop(wells, buffer, **kwargs):
+    """Load nodeprop."""
+    _ = kwargs
+    columns = ['NODE', 'PRESS', 'CHOKE', 'GASLIFT', 'GROUP']
+    defaults = [None, "1*", 'NO', 'NO', '1*']
+    wellsdata = {}
+    for line in buffer:
+        if line.strip() == '/':
+            wells.update(wellsdata, mode='a')
+            return wells
+
+        vals = re.sub("[\"\']", "", line).split('/')[0].strip().split()
+        for i, col in enumerate(columns):
+            try:
+                val = vals[i]
+                if val in ('1*', ""):
+                    raise ValueError()
+            except IndexError as e:
+                _ = e
+                if defaults[i] is None:
+                    raise ValueError(f'Default value not assumed for {col} in the table.') from None
+                vals.append(defaults[i])
+            except ValueError as e:
+                _ = e
+                if defaults[i] is None:
+                    raise ValueError(f'Default value not assumed for {col} in the table.') from None
+                vals[i] = defaults[i]
+
+        val_dict = dict(zip(columns, vals))
+
+        if val_dict['NODE'] not in wells:
+            raise KeyError(f"Node {val_dict['NODE']} not found among previously described nodes.")
+        if val_dict['PRESS'] != "1*":
+            try:
+                val_dict['PRESS'] = float(val_dict['PRESS'])
+            except (TypeError, ValueError) as e:
+                _ = e
+                raise ValueError(f"PRESS can't be converted into number : {val_dict['PRESS']}") from None
+
+        val_dict['CHOKE'] = val_dict['CHOKE'].upper() == 'YES'
+        try:
+            node = wells[val_dict['NODE']]
+        except KeyError:
+            node = WellSegment(parent=wells.root, name=val_dict['NODE'], ntype='node')
+
+        wellsdata[node.name] = {k.upper():v for k, v in val_dict.items() if k != 'NODE'}
+    wells.update(wellsdata, mode='a')
+    return wells
+
+def load_vfp(wells, buffer, attr, **kwargs):
+    """Load VFP table."""
+    ind_vars = ['FLO', 'THP'] + ['WFR', 'GFR', 'ALQ'] * (attr == 'VFPPROD')
+    vfp_dict = {'TYPE': attr}
+    vfp_dict['HEADER'] = read_header(buffer, VFP_HEADER_INFO[attr+'HEADER'])
+    n_rec = []
+    for rec in ind_vars:
+        vfp_dict[rec] = read_array(buffer, dtype=np.float32)
+        n_rec.append(vfp_dict[rec].size)
+    vfp_dict['DATA'] = read_vfp_body(buffer, n_rec)
+    if 'VFPTABL' in wells.root.attributes:
+        name = f"VFP{wells.root.vfptabl}"
+    else:
+        name = "VFP3"
+    wellsdata = {'FIELD': {'VFPTABLES': [VFPTable(dct=vfp_dict, name=name)]}}
+    wells.update(wellsdata, mode='a', **kwargs)
+    return wells
+
+def load_vfptabl(wells, buffer, **kwargs):
+    """Load VFPTABL keyword."""
+    default = 3
+    mode = next(iter(buffer)).split("/")[0].strip()
+    mode = int(mode) if mode.isdigit() else default
+    wellsdata = {'FIELD': {'VFPTABL': mode}}
+    wells.update(wellsdata, mode='a', **kwargs)
+    return wells
+
+def load_netbalan(wells, buffer, **kwargs):
+    """Load NETBALAN keyword."""
+    _ = kwargs
+    columns = ['INT', 'PRESTOL', 'MAXITER', "CHOKTOL"]
+    defaults = ["1*", 0.1, 20, 0.01]
+    vals = next(iter(buffer)).split("/")[0].strip().split()
+    for i in range(len(columns)):
+        try:
+            val = vals[i]
+            if val in ('1*', ""):
+                raise ValueError()
+        except IndexError:
+            vals.append(defaults[i])
+        except ValueError:
+            vals[i] = defaults[i]
+    df = pd.DataFrame(dict(zip(columns, vals)), index=[0])
+    welldata = {'FIELD': {'NETBALAN': df}}
+    wells.update(welldata, mode='a', ignore_index=True)
+    return wells
+
+def load_nliqrem(wells, buffer, **kwargs):
+    """Partial load WCONPROD table."""
+    _ = kwargs
+    clause = kwargs["clause"]
+    columns = ['NODE', 'MAXREM', 'MAXRAT']
+    defaults = ["1*", np.inf, 1]
+    col_def = dict(zip(columns, defaults))
+    df = pd.DataFrame(columns=columns)
+    for line in buffer:
+        if '/' not in line:
+            break
+        line = line.split('/')[0].strip()
+        if not line:
+            break
+        vals = line.split()[:len(columns)]
+        full = [None] * len(columns)
+        shift = 0
+        for i, v in enumerate(vals):
+            if i + shift >= len(columns):
+                break
+            if '*' in v:
+                shift += int(v.strip('*')) - 1
+            else:
+                full[i+shift] = v
+        df = df.append(dict(zip(columns, full)), ignore_index=True)
+    
+    for k, v in col_def.items():
+        if k in df:
+            df[k] = df[k].fillna(v)
+    if not df.empty:
+        df["MAXRAT"] = df["MAXRAT"].astype(np.float32)
+        welldata = {k: {clause: v} for k, v in df.groupby('NODE')}
+        wells.update(welldata, mode='a', ignore_index=True)
+    return wells
+
+def load_weltarg(wells, buffer, **kwargs):
+    """Load weltarg."""
+    _ = kwargs
+    columns = ['WELNAME', 'TARGET', 'VALUE']
+    defaults = [None, None, None]
+    wellsdata = {}
+    for line in buffer:
+        line = line.split('/')[0].strip()
+        if not line:
+            break
+        vals = re.sub("[\"\']", "", line).split()
+
+        for i, col in enumerate(columns):
+            try:
+                val = vals[i]
+                if val in ('1*', ""):
+                    raise ValueError()
+            except IndexError as e:
+                if defaults[i] is None:
+                    raise ValueError(f'Default value not assumed for {col} in the table.') from e
+                vals.append(defaults[i])
+            except ValueError as e:
+                if defaults[i] is None:
+                    raise ValueError(f'Default value not assumed for {col} in the table.') from e
+                vals[i] = defaults[i]
+
+        val_dict = dict(zip(columns, vals))
+        
+        if val_dict['TARGET'] not in ("VFP", "LIFT"):
+            # warnings.warn("TARGET value is not currently supported: {}. Ignoring the line".format(val_dict['TARGET']), UserWarning)
+            continue
+        
+        if val_dict['TARGET'] == "VFP":
+            if val_dict['VALUE'].isdigit() and int(val_dict['VALUE']) > 0:
+                val_dict['VALUE'] = int(val_dict['VALUE'])
+            else:
+                raise ValueError('VFP Table number should be a positive integer. Given {}.'.format(val_dict['VALUE']))
+        if val_dict['TARGET'] == "LIFT":
+            try:
+                val_dict['VALUE'] = float(val_dict['VALUE'])
+            except Exception as e:
+                raise ValueError('ALQ should be a float. Given {}.'.format(val_dict['VALUE'])) from e
+
+        try:
+            well = wells[val_dict['WELNAME']]
+        except KeyError:
+            # warnings.warn("Well name not found: {}. Creating the node.".format(val_dict['WELNAME']), UserWarning)
+            well = WellSegment(parent=wells.root,
+                               name=val_dict['WELNAME'],
+                               ntype='well')
+        
+        if well.name not in wellsdata:
+            wellsdata[well.name] = {"ntype": "well"}
+        if val_dict['TARGET'] == "VFP":
+            vfp = get_vfp(wells, val_dict['VALUE'])
+            wellsdata[well.name]['VFP'] = vfp
+        if val_dict['TARGET'] == "LIFT":
+            wellsdata[well.name]['ALQ'] = val_dict['VALUE']
+    wells.update(wellsdata, mode='w', **kwargs)
     return wells
