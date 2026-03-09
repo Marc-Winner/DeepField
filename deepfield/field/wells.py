@@ -134,7 +134,10 @@ class Wells(BaseTree):
                 elif mode == 'a':
                     if k in node.attributes:
                         att = getattr(node, k)
-                        setattr(node, k, pd.concat([att, v], **kwargs))
+                        if isinstance(att, list):
+                            setattr(node, k, att+v)
+                        else:
+                            setattr(node, k, att.append(v, **kwargs))
                     else:
                         setattr(node, k, v)
                 else:
