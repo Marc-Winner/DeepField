@@ -132,7 +132,8 @@ class Aquifers(BaseComponent):
                 'poro': row['POROSITY'],
                 'compressibility': row['COMPRESSIBILITY'],
                 'r': row['RADIUS'],
-                'height': row['THICKNESS']
+                'height': row['THICKNESS'],
+                'angle': row['ANGLE'],
             }
 
             for key, value in properties.items():

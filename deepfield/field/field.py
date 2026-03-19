@@ -95,13 +95,18 @@ class Field:
         read first 3000 bytes to infer encoding.
     loglevel : str, optional
         Log level to be printed while loading. Default to 'INFO'.
+    lazy_keywords : tuple, list, set or None, optional
+        ASCII keywords to defer during initial `load()`.
     """
     _default_config = default_config
-    def __init__(self, path=None, config=None, logfile=None, encoding='auto', loglevel='INFO'):
+    def __init__(self, path=None, config=None, logfile=None, encoding='auto',
+                 loglevel='INFO', lazy_keywords=None):
         self._path = preprocess_path(path) if path is not None else None
         self._encoding = encoding
         self._components = {}
         self._config = None
+        self.lazy_keywords = set(x.upper() for x in (lazy_keywords or ()))
+        self._lazy_sections = []
         self._meta = {'UNITS': 'METRIC',
                       'START': pd.to_datetime(''),
                       'DATES': pd.to_datetime([]),
@@ -391,8 +396,9 @@ class Field:
             if comp in ['grid', 'rock', 'states', 'tables', 'faults']:
                 assert attrs is not None
                 for k in attrs:
-                    loaders[k] = partial(getattr(self, comp).load, attr=k,
-                                         logger=self._logger, **kwargs)
+                    real_loader = partial(getattr(self, comp).load, attr=k,
+                                          logger=self._logger, **kwargs)
+                    loaders[k] = self._wrap_loader(k, real_loader)
             if comp == 'wells':
                 extented_list = []
                 assert attrs is not None
@@ -414,12 +420,86 @@ class Field:
                     extented_list.extend(['GROU', 'GROUP', 'GRUPTREE'])
 
                 for k in set(extented_list):
-                    loaders[k] = partial(self.wells.load, attr=k, logger=self._logger,
-                                         meta=self.meta, grid=self.grid, **kwargs)
+                    real_loader = partial(self.wells.load, attr=k, logger=self._logger,
+                                          meta=self.meta, grid=self.grid, **kwargs)
+                    loaders[k] = self._wrap_loader(k, real_loader)
             if comp == 'aquifers':
                 for k in ['AQCT', 'AQCO', 'AQUANCON', 'AQUCT']:
-                    loaders[k] = partial(self.aquifers.load, attr=k, logger=self._logger)
+                    real_loader = partial(self.aquifers.load, attr=k, logger=self._logger)
+                    loaders[k] = self._wrap_loader(k, real_loader)
         return loaders
+
+    def _wrap_loader(self, keyword, real_loader):
+        """Wrap loader into lazy recorder when keyword is deferred."""
+        if keyword not in self.lazy_keywords:
+            return real_loader
+        return partial(self._lazy_record_loader, keyword=keyword, real_loader=real_loader)
+
+    def _lazy_record_loader(self, buffer, keyword, real_loader):
+        """Record lazy section location and skip section in initial pass.
+
+        for vfp keywords we let the loader create placeholders in deferred mode.
+        """
+        path = getattr(buffer, '_path', None)
+        line_number = getattr(buffer, 'line_number', 0)
+        self._lazy_sections.append({
+            'keyword': keyword,
+            'path': path,
+            'line_number': line_number,
+            'loader': real_loader,
+            'loaded': False,
+        })
+        if keyword in ('VFPPROD', 'VFPINJ'):
+            real_loader(buffer, deferred=True)
+            return
+        self._skip_deferred_section(buffer)
+
+    @staticmethod
+    def _skip_deferred_section(buffer):
+        """Generic skip: read until first `/` terminator line chunk."""
+        buffer.skip_to('/')
+
+    def load_lazy(self, keywords=(), raise_errors: bool = False):
+        """Load deferred keyword sections.
+
+        Parameters
+        ----------
+        keywords : tuple/list/set
+            Deferred keywords to load. Empty means all deferred keywords.
+        raise_errors : bool
+            If True, raise on first lazy-loading failure.
+        """
+        from .parse_utils.ascii import StringIteratorIO
+
+        selected = set(x.upper() for x in (keywords or ()))
+        pending = [sec for sec in self._lazy_sections
+                   if (not sec['loaded']) and (not selected or sec['keyword'] in selected)]
+
+        by_path = {}
+        for sec in pending:
+            by_path.setdefault(sec['path'], []).append(sec)
+
+        for path, sections in by_path.items():
+            sections.sort(key=lambda sec: sec['line_number'])
+            with StringIteratorIO(path, encoding=self._encoding) as lines:
+                current = 0
+                for sec in sections:
+                    while current < sec['line_number']:
+                        try:
+                            next(lines)
+                        except StopIteration:
+                            break
+                        current = lines.line_number
+                    try:
+                        sec['loader'](lines)
+                        sec['loaded'] = True
+                    except Exception as err:  # pylint: disable=broad-except
+                        if raise_errors:
+                            raise
+                        self._logger.warning("lazy loading failed for %s: %s", sec['keyword'], err)
+
+        self._lazy_sections = [sec for sec in self._lazy_sections if not sec['loaded']]
+        return self
 
     def _load_results(self, raise_errors, include_binary):
         config = self._config

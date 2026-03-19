@@ -505,6 +505,40 @@ def get_vfp(wells, num):
         raise ValueError('No VFP with this number is found: {}. VFP 9999 is chosen instead'.format(num))
     return matched[0]
 
+def _iter_nodes_with_vfp(wells):
+    """Yield nodes that currently have a VFP reference."""
+    for node in wells:
+        if 'VFP' in node.attributes:
+            yield node
+
+def _upsert_vfp_table(wells, vfp_table):
+    """Insert or replace VFP table by table number and refresh references."""
+    existing = list(getattr(wells.root, "VFPTABLES", []))
+    for i, old in enumerate(existing):
+        if old.number == vfp_table.number:
+            existing[i] = vfp_table
+            for node in _iter_nodes_with_vfp(wells):
+                if getattr(node, 'VFP', None) is old:
+                    node.VFP = vfp_table
+            wells.update({'FIELD': {'VFPTABLES': existing}}, mode='w')
+            return wells
+    wells.update({'FIELD': {'VFPTABLES': [vfp_table]}}, mode='a')
+    return wells
+
+def _skip_vfp_body(buffer, n_rec):
+    """Consume VFP body tokens without creating heavy arrays."""
+    nflo = n_rec[0]
+    nrow = int(np.prod(n_rec[1:]))
+    nind = len(n_rec[1:])
+    remaining = (nind + nflo) * nrow
+    for line in buffer:
+        tokens = line.strip().strip('/').split()
+        if not tokens:
+            continue
+        remaining -= len(tokens)
+        if remaining <= 0:
+            return
+
 def load_nodeprop(wells, buffer, **kwargs):
     """Load nodeprop."""
     _ = kwargs
@@ -556,6 +590,7 @@ def load_nodeprop(wells, buffer, **kwargs):
 
 def load_vfp(wells, buffer, attr, **kwargs):
     """Load VFP table."""
+    deferred = kwargs.pop('deferred', False)
     ind_vars = ['FLO', 'THP'] + ['WFR', 'GFR', 'ALQ'] * (attr == 'VFPPROD')
     vfp_dict = {'TYPE': attr}
     vfp_dict['HEADER'] = read_header(buffer, VFP_HEADER_INFO[attr+'HEADER'])
@@ -563,13 +598,27 @@ def load_vfp(wells, buffer, attr, **kwargs):
     for rec in ind_vars:
         vfp_dict[rec] = read_array(buffer, dtype=np.float32)
         n_rec.append(vfp_dict[rec].size)
-    vfp_dict['DATA'] = read_vfp_body(buffer, n_rec)
+    number = vfp_dict['HEADER'].get('NUMBER', 0)
     if 'VFPTABL' in wells.root.attributes:
         name = f"VFP{wells.root.vfptabl}"
     else:
         name = "VFPI"
-    wellsdata = {'FIELD': {'VFPTABLES': [VFPTable(dct=vfp_dict, name=name)]}}
-    wells.update(wellsdata, mode='a', **kwargs)
+
+    if deferred:
+        _skip_vfp_body(buffer, n_rec)
+        # build a lightweight table shell without invoking VFP dct-parsing branch
+        placeholder = VFPTable(data=pd.DataFrame(), name=name)
+        placeholder.number = number
+        placeholder.vfptype = attr
+        placeholder.meta = dict(vfp_dict['HEADER'])
+        placeholder.records = {}
+        placeholder.variables = {}
+        placeholder.constants = {}
+        _upsert_vfp_table(wells, placeholder)
+        return wells
+
+    vfp_dict['DATA'] = read_vfp_body(buffer, n_rec)
+    _upsert_vfp_table(wells, VFPTable(dct=vfp_dict, name=name))
     return wells
 
 def load_vfptabl(wells, buffer, **kwargs):
