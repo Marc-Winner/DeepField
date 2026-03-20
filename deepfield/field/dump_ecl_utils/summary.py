@@ -214,10 +214,27 @@ def save_summary_bytime(f, rates, date, time_idx, time):
     write_unrst_data_section(f=f, name=PARAMS, stype=DATA_BLOCK_SPEC[PARAMS].type,
                              data_array=params_data)
 
-def save_summary_file(is_unified, rates, dates, name, mode, start_idx, start_t):
+def save_summary_file(is_unified, rates, dates, name, mode, start_idx, start_t, time_size=None, logger_print=None):
     """Save summary file."""
     file_summary = None
-    time_size = get_time_size(rates)
+    if time_size is None:
+        time_size = get_time_size(rates)
+
+    if len(dates) == 0:
+        if logger_print is not None:
+            logger_print("Summary dump: no result dates available; skipping UNSMRY/SMSPEC.", level='warning')
+        return
+
+    # summary dumping assumes that `rates` time dimension matches `dates`.
+    # If they differ, avoid IndexError by truncating the export to the shorter length.
+    dates_len = len(dates)
+    if time_size > dates_len:
+        if logger_print is not None:
+            logger_print(
+                f"Summary dump: truncating export time dimension from {time_size} to {dates_len} (rates vs dates length mismatch).",
+                level='warning'
+            )
+        time_size = dates_len
 
     unified_file = None
     for time in range(start_idx, time_size):
@@ -234,8 +251,19 @@ def save_summary(is_unified, name, rates, dates, grid_dim, mode, logger=None):
         if logger is not None:
             getattr(logger, level)(msg)
 
+    if len(dates) == 0:
+        logger_print("Summary dump: no result dates available; skipping UNSMRY/SMSPEC export.")
+        return
+
     start_idx = 1
     start_t = 0
+    export_time_size = get_time_size(rates)
+    if len(dates) != export_time_size:
+        # Keep dumper robust: allow truncated export instead of IndexError.
+        logger_print(
+            f"Summary dump: rates/dates length mismatch (rates time={export_time_size}, dates time={len(dates)}). Export will be truncated to fit.",
+            level='warning'
+        )
     if (mode == 'w' or\
         (mode == 'a' and\
          (not os.path.isfile(name + '.UNSMRY') or not os.path.isfile(name + '.SMSPEC')))):
@@ -247,4 +275,5 @@ def save_summary(is_unified, name, rates, dates, grid_dim, mode, logger=None):
     else:
         logger_print("Dumping summary: No UNSMRY file found")
 
-    save_summary_file(is_unified, rates, dates, name, mode, start_idx, start_t)
+    save_summary_file(is_unified, rates, dates, name, mode, start_idx, start_t,
+                       time_size=export_time_size, logger_print=logger_print)
