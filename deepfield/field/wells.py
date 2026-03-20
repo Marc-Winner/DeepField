@@ -16,13 +16,17 @@ from .base_tree import BaseTree
 from .rates import show_rates, show_blocks_dynamics
 from .grids import OrthogonalGrid
 from .getting_wellblocks import get_wellblocks_vtk, get_wellblocks_compdat
-from .wells_dump_utils import write_perf, write_events, write_schedule, write_welspecs
+from .wells_dump_utils import (
+    write_perf, write_events, write_schedule, write_welspecs,
+    write_network, write_netbalan, write_branprop, write_nodeprop,
+)
 from .wells_load_utils import (load_rsm, load_ecl_binary, load_group, load_grouptree,
                                load_welspecs, load_welspecl, load_compdat, load_compdatl,
                                load_comdatmd, load_wconprod, load_wconinje, load_welltracks,
                                load_events, load_history, load_wefac, load_wfrac, load_wfracp,
                                load_netbalan, load_network, load_branprop, load_nodeprop, 
                                load_vfp, load_vfptabl, load_nliqrem, load_weltarg,
+                               load_welopen,
                                DEFAULTS, VALUE_CONTROL)
 from .decorators import apply_to_each_segment, apply_to_each_node
 
@@ -444,6 +448,8 @@ class Wells(BaseTree):
             return load_nliqrem(self, buffer, clause=attr, **kwargs)
         if attr == "WELTARG":
             return load_weltarg(self, buffer, **kwargs)
+        if attr == "WELOPEN":
+            return load_welopen(self, buffer, **kwargs)
         raise ValueError("Keyword {} is not supported in Wells.".format(attr))
 
     def _load_rsm(self, *args, **kwargs):
@@ -494,6 +500,9 @@ class Wells(BaseTree):
                                          [child.name for child in node.children]) + '\n')
                 f.write('/\n')
             elif attr.upper() == 'GRUPTREE':
+                # Extended network keywords must be placed together.
+                # Order follows your example deck snippet.
+                write_netbalan(f, self)
                 f.write('GRUPTREE\n')
                 for node in PreOrderIter(self.root):
                     if node.is_root:
@@ -502,6 +511,9 @@ class Wells(BaseTree):
                         p_name = '1*' if node.parent.is_root else node.parent.name
                         f.write(' '.join([node.name, p_name, '/\n']))
                 f.write('/\n')
+                write_branprop(f, self)
+                write_nodeprop(f, self)
+                write_network(f, self)
             elif attr.upper() == 'EVENTS':
                 write_events(f, self, VALUE_CONTROL)
             elif attr.upper() == 'SCHEDULE':

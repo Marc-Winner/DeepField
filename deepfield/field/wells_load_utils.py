@@ -302,6 +302,19 @@ def load_wfracp(wells, buffer, meta, **kwargs):
     return _load_control_table(wells, attribute, columns, column_types,
                                has_date, buffer, meta, **kwargs)
 
+def load_welopen(wells, buffer, meta, **kwargs):
+    """Load WELOPEN keyword.
+
+    WELOPEN specifies per-well OPEN/SHUT status and belongs to the most
+    recently read SCHEDULE date (i.e. the last item in `meta['DATES']`).
+    """
+    columns = ['DATE', 'WELL', 'STATUS']
+    column_types = {'text': columns[1:]}
+    attribute = 'WELOPEN'
+    has_date = True
+    return _load_control_table(wells, attribute, columns, column_types,
+                               has_date, buffer, meta, **kwargs)
+
 def load_welltracks(wells, buffer, **kwargs):
     """Load welltracks while possible.
 
