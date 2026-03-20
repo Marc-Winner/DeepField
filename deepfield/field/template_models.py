@@ -102,6 +102,8 @@ WWIR
 
 RECU
 
+$tn_vfp_tables
+
 $dates
 
 RATE 1 MONTH WELL EXAC END FIEL GROU CRAT LRAT /

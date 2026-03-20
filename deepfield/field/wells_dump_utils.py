@@ -213,6 +213,158 @@ def write_nodeprop(f, wells):
         f.write(r + '\n')
     f.write('/\n\n')
 
+def _fmt_vfp_num(x):
+    """Format numeric tokens for deck output."""
+    try:
+        xf = float(x)
+    except Exception as err:  # pylint: disable=broad-except
+        _ = err
+        return str(x)
+    if abs(xf - int(xf)) < 1e-9:
+        return str(int(xf))
+    return "{:.10g}".format(xf)
+
+
+def _quote_vfp_str_token(token):
+    """Quote deck string tokens (variable names, units, BHP/THT)."""
+    if token is None:
+        return "''"
+    if isinstance(token, str):
+        return f"'{token}'"
+    return f"'{token}'"
+
+
+def write_vfp_tables(f, wells):
+    """Write loaded VFPPROD/VFPINJ tables into the deck stream."""
+    vfps = sorted(getattr(wells.root, 'VFPTABLES', []), key=lambda t: int(getattr(t, 'number', 0)))
+    if not vfps:
+        return
+
+    def lookup(vfp_table, axes):
+        """Return scalar value (BHP/THT) for given axis values."""
+        value_col = vfp_table.meta.get('VALUE', 'BHP')
+        names = list(getattr(vfp_table.index, 'names', []))
+        if not names:
+            if value_col in vfp_table.columns:
+                return float(vfp_table[value_col].iloc[0])
+            return float(vfp_table.iloc[0])
+        if len(names) == 1:
+            key = axes[names[0]]
+        else:
+            key = tuple(axes[n] for n in names)
+        if value_col in vfp_table.columns:
+            res = vfp_table.loc[key, value_col]
+        else:
+            res = vfp_table.loc[key]
+        try:
+            return float(res)
+        except Exception:  # pylint: disable=broad-except
+            return float(getattr(res, 'item', lambda: res)())
+
+    for vfp in vfps:
+        keyword = str(getattr(vfp, 'vfptype', '')).upper()
+        if keyword not in ('VFPPROD', 'VFPINJ'):
+            # Be strict: deck only supports these two.
+            continue
+
+        records = getattr(vfp, 'records', None) or {}
+        if keyword == 'VFPPROD':
+            needed = ['FLO', 'THP', 'WFR', 'GFR', 'ALQ']
+            if any(k not in records or records.get(k) is None for k in needed):
+                continue
+        else:  # VFPINJ
+            needed = ['FLO', 'THP']
+            if any(k not in records or records.get(k) is None for k in needed):
+                continue
+
+        # Placeholder/unformatted tables may have RangeIndex with `names=[None]`.
+        idx_names = list(getattr(getattr(vfp, 'index', None), 'names', []) or [])
+        if idx_names and any(n is None for n in idx_names):
+            continue
+
+        meta = getattr(vfp, 'meta', {}) or {}
+        number = getattr(vfp, 'number', 0)
+        ref = meta.get('REF', 0)
+        flo_def = meta.get('FLO', 'FLO')
+        type_def = meta.get('TYPE', 'THP')
+        units = meta.get('UNITS', 'METRIC')
+        value_def = meta.get('VALUE', 'BHP')
+
+        if keyword == 'VFPPROD':
+            wfr_def = meta.get('WFR', 'WFR')
+            gfr_def = meta.get('GFR', 'GFR')
+            alq_def = meta.get('ALQ', False)
+            alq_token = '1*' if (alq_def is False or alq_def == '1*' or alq_def == 'False' or alq_def is None) else _quote_vfp_str_token(alq_def)
+
+            f.write('VFPPROD\n')
+            f.write(
+                "{} {} {} {} {} {} {} {} {}/\n".format(
+                    int(number),
+                    _fmt_vfp_num(ref),
+                    _quote_vfp_str_token(flo_def),
+                    _quote_vfp_str_token(wfr_def),
+                    _quote_vfp_str_token(gfr_def),
+                    _quote_vfp_str_token(type_def),
+                    alq_token,
+                    _quote_vfp_str_token(units),
+                    _quote_vfp_str_token(value_def),
+                )
+            )
+
+            flo_vals = vfp.records['FLO']
+            thp_vals = vfp.records['THP']
+            wfr_vals = vfp.records['WFR']
+            gfr_vals = vfp.records['GFR']
+            alq_vals = vfp.records['ALQ']
+
+            f.write(' '.join(_fmt_vfp_num(x) for x in flo_vals) + ' /\n')
+            f.write(' '.join(_fmt_vfp_num(x) for x in thp_vals) + ' /\n')
+            f.write(' '.join(_fmt_vfp_num(x) for x in wfr_vals) + ' /\n')
+            f.write(' '.join(_fmt_vfp_num(x) for x in gfr_vals) + ' /\n')
+            f.write(' '.join(_fmt_vfp_num(x) for x in alq_vals) + ' /\n')
+
+            for nt_i, thp_val in enumerate(thp_vals, start=1):
+                for nw_i, wfr_val in enumerate(wfr_vals, start=1):
+                    for ng_i, gfr_val in enumerate(gfr_vals, start=1):
+                        for na_i, alq_val in enumerate(alq_vals, start=1):
+                            axes = {'FLO': None, 'THP': thp_val, 'WFR': wfr_val, 'GFR': gfr_val, 'ALQ': alq_val}
+                            vals = []
+                            for flo_val in flo_vals:
+                                axes['FLO'] = flo_val
+                                vals.append(_fmt_vfp_num(lookup(vfp, axes)))
+                            f.write(
+                                f"{nt_i} {nw_i} {ng_i} {na_i} "
+                                + " ".join(vals)
+                                + " /\n"
+                            )
+
+        else:  # VFPINJ
+            f.write('VFPINJ\n')
+            f.write(
+                "{} {} {} {} {} {}/\n".format(
+                    int(number),
+                    _fmt_vfp_num(ref),
+                    _quote_vfp_str_token(flo_def),
+                    _quote_vfp_str_token(type_def),
+                    _quote_vfp_str_token(units),
+                    _quote_vfp_str_token(value_def),
+                )
+            )
+
+            flo_vals = vfp.records['FLO']
+            thp_vals = vfp.records['THP']
+
+            f.write(' '.join(_fmt_vfp_num(x) for x in flo_vals) + ' /\n')
+            f.write(' '.join(_fmt_vfp_num(x) for x in thp_vals) + ' /\n')
+
+            for nt_i, thp_val in enumerate(thp_vals, start=1):
+                axes = {'FLO': None, 'THP': thp_val}
+                vals = []
+                for flo_val in flo_vals:
+                    axes['FLO'] = flo_val
+                    vals.append(_fmt_vfp_num(lookup(vfp, axes)))
+                f.write(f"{nt_i} " + " ".join(vals) + " /\n")
+
 
 def write_schedule(f, wells, dates, start_date, **kwargs):
     """Write SCHEDULE file."""
@@ -227,6 +379,7 @@ def write_schedule(f, wells, dates, start_date, **kwargs):
         f.write('/\n\n')
 
     _ = kwargs
+    write_vfp_tables(f, wells)
     attributes = ['COMPDAT', 'COMPDATL', 'COMPDATMD', 'WCONPROD', 'WCONINJE',
                   'WEFAC', 'WFRAC', 'WFRACP', 'WELOPEN']
     data = {key: [] for key in attributes}

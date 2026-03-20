@@ -795,6 +795,13 @@ class Field:
             fill_values['start'] = self.meta['START']
 
         fill_values['dates'] = dates_to_str(self.result_dates)
+        fill_values['tn_vfp_tables'] = ''
+        if model_type == 'TN':
+            from io import StringIO
+            from .wells_dump_utils import write_vfp_tables
+            buf = StringIO()
+            write_vfp_tables(buf, self.wells)
+            fill_values['tn_vfp_tables'] = buf.getvalue()
 
         fill_values['dimens'] = ' '.join(self.grid.dimens.astype(str))
         fill_values['size'] = np.prod(self.grid.dimens)
