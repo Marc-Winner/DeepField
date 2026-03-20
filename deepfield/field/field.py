@@ -759,6 +759,22 @@ class Field:
         out : Field
             Field unchanged.
         """
+        pending = [sec for sec in getattr(self, '_lazy_sections', [])
+                   if not sec.get('loaded', False)]
+        if pending:
+            pending_keywords = sorted({sec['keyword'].upper() for sec in pending})
+            tuple_text = ', '.join(repr(k) for k in pending_keywords)
+            if len(pending_keywords) == 1:
+                tuple_text += ','
+            hint = "Call `model.load_lazy(keywords=({}))` or `model.load_lazy()` before dumping.".format(
+                tuple_text
+            )
+            raise ValueError(
+                "Cannot dump while deferred keywords are still not loaded: {}. {}".format(
+                    ', '.join(pending_keywords), hint
+                )
+            )
+
         dir_inc = os.path.join(dir_path, 'INCLUDE')
         if not os.path.exists(dir_inc):
             os.mkdir(dir_inc)
