@@ -143,6 +143,7 @@ def load_add(field, buffer, logger=None):
     return field
 
 def _get_box(vals, dimens):
+    vals = np.asarray(vals).copy()
     full_box = np.array([1, dimens[0], 1, dimens[1], 1, dimens[2]])
     mask = vals == INT_NAN
     if mask.any():
