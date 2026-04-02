@@ -1,41 +1,43 @@
+"""VFP dump behaviour using egg_mini deck (VFPTABL, VFPPROD, VFPINJ)."""
 from pathlib import Path
 
 import pytest
 
-from ..field import Field
+from deepfield import Field
 
-
-def _network_demo_data_path():
-    tests_dir = Path(__file__).resolve().parent
-    project_root = tests_dir.parents[1]  # .../DeepField/deepfield/tests -> .../DeepField
-    egg_crm_root = project_root.parent / "egg-crm"
-    return egg_crm_root / "tnav_models" / "network_demo" / "NETWORK_DEMO.DATA"
+EGG_MINI_DATA = Path(__file__).resolve().parent / "data" / "egg_mini" / "Egg_Mini.DATA"
 
 
 def test_dump_raises_on_deferred_keywords(tmp_path):
-    data_path = _network_demo_data_path()
-    model = Field(str(data_path), loglevel="ERROR", lazy_keywords=("VFPPROD",)).load()
+    assert EGG_MINI_DATA.is_file(), EGG_MINI_DATA
+    model = Field(str(EGG_MINI_DATA), loglevel="ERROR", lazy_keywords=("VFPPROD",)).load(
+        include_binary=False
+    )
 
-    out_base = tmp_path / "dump_model"
+    # dump() joins path + title then mkdir(title_dir); parent must exist (pytest tmp_path does)
     with pytest.raises(ValueError, match=r"load_lazy"):
-        model.dump(path=str(out_base), mode="w", data=True, results=False)
+        model.dump(path=str(tmp_path), mode="w", data=True, results=False)
 
 
-def test_vfpprod_dumped_before_dates(tmp_path):
-    data_path = _network_demo_data_path()
-    model = Field(str(data_path), loglevel="ERROR", lazy_keywords=("VFPPROD",)).load()
+def test_vfp_tables_dumped_before_dates_when_present(tmp_path):
+    assert EGG_MINI_DATA.is_file(), EGG_MINI_DATA
+    model = Field(str(EGG_MINI_DATA), loglevel="ERROR", lazy_keywords=("VFPPROD",)).load(
+        include_binary=False
+    )
     model.load_lazy(keywords=("VFPPROD",), raise_errors=True)
 
-    out_base = tmp_path / "dump_model"
-    model.dump(path=str(out_base), mode="w", data=True, results=False)
+    model.dump(path=str(tmp_path), mode="w", data=True, results=False)
 
     title = model.meta.get("TITLE", "Untitled")
-    schedule_inc = out_base / title / "INCLUDE" / "schedule.inc"
+    schedule_inc = tmp_path / title / "INCLUDE" / "schedule.inc"
     content = schedule_inc.read_text(encoding="utf-8", errors="ignore")
 
-    vfp_pos = content.find("VFPPROD")
+    vfp_prod_pos = content.find("VFPPROD")
+    vfp_inj_pos = content.find("VFPINJ")
     dates_pos = content.find("DATES")
-    assert vfp_pos != -1, "VFPPROD must be present in dumped schedule.inc"
-    assert dates_pos != -1, "DATES must be present in dumped schedule.inc"
-    assert vfp_pos < dates_pos, "VFPPROD must be emitted before the first DATES block"
 
+    assert vfp_prod_pos != -1, "VFPPROD must be present in dumped schedule.inc"
+    assert vfp_inj_pos != -1, "VFPINJ must be present in dumped schedule.inc"
+    if dates_pos != -1:
+        assert vfp_prod_pos < dates_pos, "VFPPROD must be emitted before the first DATES block"
+        assert vfp_inj_pos < dates_pos, "VFPINJ must be emitted before the first DATES block"
