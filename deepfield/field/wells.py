@@ -140,6 +140,15 @@ class Wells(BaseTree):
                         att = getattr(node, k)
                         if isinstance(att, list):
                             setattr(node, k, att+v)
+                        elif isinstance(att, pd.DataFrame):
+                            # pandas>=2 removed DataFrame.append; use concat instead.
+                            if isinstance(v, pd.DataFrame):
+                                vdf = v
+                            elif isinstance(v, dict):
+                                vdf = pd.DataFrame([v])
+                            else:
+                                vdf = pd.DataFrame(v)
+                            setattr(node, k, pd.concat([att, vdf], sort=False, **kwargs))
                         else:
                             setattr(node, k, att.append(v, **kwargs))
                     else:

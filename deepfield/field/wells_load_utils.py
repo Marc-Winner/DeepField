@@ -412,13 +412,13 @@ def load_history(wells, buffer, column_names, logger, **kwargs):
         return wells
     column_names[1] = 'DATE'
 
-    df = pd.DataFrame()
-
+    rows = []
     for line in buffer:
         if 'ENDE' in line or 'ENDH' in line or line.strip() == '/':
             break
-        df = df.append(parse_history_line(line, column_names))
+        rows.append(parse_history_line(line, column_names))
 
+    df = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
     if not df.empty:
         welldata = {k: {'HISTORY': v.reset_index(drop=True)} for k, v in df.groupby('WELL')}
         wells.update(welldata, mode='a', ignore_index=True)
@@ -429,9 +429,16 @@ def load_network(wells, buffer, **kwargs):
     """Load network."""
     _ = kwargs
     columns = ['NODMAX', 'NBRMAX', 'NBCMAX']
-    df = pd.DataFrame(dict(zip(columns, read_array(buffer, dtype=int).tolist())), index=[0])
-    welldata = {'FIELD': {'NETWORK': df}}
-    wells.update(welldata, mode='a', ignore_index=True)
+    defaults = [None, None, None]
+    vals = read_array(buffer, dtype=int).tolist()
+    for i, col in enumerate(columns):
+        if i >= len(vals):
+            break
+        if vals[i] == '':
+            vals[i] = defaults[i]
+    vals += defaults[len(vals):]
+    df = pd.DataFrame(dict(zip(columns, vals)), index=[0])
+    wells.update({'FIELD': {'NETWORK': df}}, mode='w', ignore_index=True)
     return wells
 
 def load_branprop(wells, buffer, **kwargs):
@@ -670,7 +677,7 @@ def load_nliqrem(wells, buffer, **kwargs):
     columns = ['NODE', 'MAXREM', 'MAXRAT']
     defaults = ["1*", np.inf, 1]
     col_def = dict(zip(columns, defaults))
-    df = pd.DataFrame(columns=columns)
+    rows = []
     for line in buffer:
         if '/' not in line:
             break
@@ -687,7 +694,9 @@ def load_nliqrem(wells, buffer, **kwargs):
                 shift += int(v.strip('*')) - 1
             else:
                 full[i+shift] = v
-        df = df.append(dict(zip(columns, full)), ignore_index=True)
+        rows.append(dict(zip(columns, full)))
+
+    df = pd.DataFrame(rows, columns=columns)
     
     for k, v in col_def.items():
         if k in df:
