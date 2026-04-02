@@ -44,6 +44,8 @@ class BaseComponent:
     @property
     def field(self):
         """Field associated with the component."""
+        if self._field is None:
+            return None
         return self._field()
 
     @field.setter
